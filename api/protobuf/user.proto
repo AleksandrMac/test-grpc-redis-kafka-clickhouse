@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = ".;userservice";
+
+message User {
+    string id = 1;
+    string email = 2;
+}
+
+message UserList {
+    repeated User user = 1;
+}
+
+message Reply {
+    string id = 1;
+    string status = 2;
+}
+
+message SelectParams {
+    uint64 offset = 1;
+    uint64 limit = 2;
+}
+
+service UserService {
+    rpc CreateUser(User) returns (Reply) {}
+    rpc DropUser(User) returns (Reply) {}
+    rpc GetUsers(SelectParams) returns (UserList){}
+}

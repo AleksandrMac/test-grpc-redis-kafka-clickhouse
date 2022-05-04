@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:14
+    volumes: 
+      - ./db/init/postgresql/001_init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/data/postgresql:/var/lib/postgresql
+    ports:
+      - 5434:5432
+    environment: 
+      - POSTGRES_USER=testhezzl_user
+      - POSTGRES_PASSWORD=testpass
+    healthcheck:
+      test: PGPASSWORD='testpass' psql -U testhezzl_user --command='SELECT 1'
+      interval: 1s
+      timeout: 2s
+      retries: 5
+  
+  redis:
+    image: redis
+    ports:
+      - 6379:6379
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    ports:
+      - 9000:9000
+    volumes:
+      - ./db/init/clickhouse:/docker-entrypoint-initdb.d
+      - ./db/data/clickhouse:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    depends_on:
+      - kafka
+
+  test_hezzl_server:    
+    image: aleksandrmac/test_hezzl:latest
+    volumes:
+      - ./db/migration/postgresql:/db/migration/postgresql
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    environment:
+      - SERVICE_NAME=test_HEZZL
+      - DB_URL=postgres://testhezzl_user:testpass@postgres_db:5432/testhezzl_db?sslmode=disable
+      - DB_CONNECT_TTL=5
+      - DB_MIGRATE_SOURCE=file:///db/migration/postgresql
+      - DB_MIGRATE_STEP=1
+      - SERVER_GRPC_PORT=9001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+       - 9001:9001
+    user: "test_hezzl_user"
+    depends_on:
+      - clickhouse
+
+  kafka:
+    image: docker.io/bitnami/kafka:3
+    ports:
+      - 9092:9092
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test:
+        ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+  
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3.7
+    ports:
+      - 2181:2181
+    volumes:
+      - "zookeeper_data:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+
+volumes:
+  zookeeper_data:
+    driver: local
+  kafka_data:
+    driver: local
